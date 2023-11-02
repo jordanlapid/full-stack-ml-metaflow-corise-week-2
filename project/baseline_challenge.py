@@ -15,7 +15,7 @@ import numpy as np
 from dataclasses import dataclass
 
 # TODO: Define your labeling function here.
-labeling_function = ...
+labeling_function = lambda row: 1 if row['rating'] >= 4 else 0
 
 
 @dataclass
@@ -30,7 +30,7 @@ class ModelResult:
 
 class BaselineChallenge(FlowSpec):
     split_size = Parameter("split-sz", default=0.2)
-    data = IncludeFile("data", default="Womens Clothing E-Commerce Reviews.csv")
+    data = IncludeFile("data", default="../data/Womens Clothing E-Commerce Reviews.csv")
     kfold = Parameter("k", default=5)
     scoring = Parameter("scoring", default="accuracy")
 
@@ -43,7 +43,7 @@ class BaselineChallenge(FlowSpec):
         # load dataset packaged with the flow.
         # this technique is convenient when working with small datasets that need to move to remove tasks.
         # TODO: load the data.
-        df = ...
+        df = pd.read_csv('../data/Womens Clothing E-Commerce Reviews.csv',index_col=0 )
         # Look up a few lines to the IncludeFile('data', default='Womens Clothing E-Commerce Reviews.csv').
         # You can find documentation on IncludeFile here: https://docs.metaflow.org/scaling/data#data-in-local-files
 
@@ -75,19 +75,19 @@ class BaselineChallenge(FlowSpec):
         pathspec = f"{current.flow_name}/{current.run_id}/{current.step_name}/{current.task_id}"
 
         # TODO: predict the majority class
-        predictions = ...
+        predictions = [1] * len(self.valdf) 
         # TODO: return the accuracy_score of these predictions
-        acc = ...
+        acc = accuracy_score(self.valdf['label'].values, predictions)
 
         # TODO: return the roc_auc_score of these predictions
-        rocauc = ...
+        rocauc = roc_auc_score(self.valdf['label'].values, predictions)
         self.result = ModelResult("Baseline", params, pathspec, acc, rocauc)
         self.next(self.aggregate)
 
     @step
     def model(self):
         # TODO: import your model if it is defined in another file.
-
+        from model import NbowModel
         self._name = "model"
         # NOTE: If you followed the link above to find a custom model implementation,
         # you will have noticed your model's vocab_sz hyperparameter.
@@ -98,10 +98,10 @@ class BaselineChallenge(FlowSpec):
         self.results = []
         for params in self.hyperparam_set:
             # TODO: instantiate your custom model here!
-            model = ...
+            model = NbowModel(vocab_sz=params['vocab_sz'])
             model.fit(X=self.df["review"], y=self.df["label"])
             # TODO: evaluate your custom model in an equivalent way to accuracy_score.
-            acc = ...
+            acc = model.eval_acc(self.valdf["review"].values, self.valdf["label"].values)
             # TODO: evaluate your custom model in an equivalent way to roc_auc_score.
             rocauc = ...
             self.results.append(
@@ -131,7 +131,7 @@ class BaselineChallenge(FlowSpec):
         df["accuracy"].append(result.acc)
         return rows, df
 
-    @card  # TODO: Set your card type to "corise".
+    @card(type="corise") # TODO: Set your card type to "corise".
     # I wonder what other card types there are?
     # https://docs.metaflow.org/metaflow/visualizing-results
     # https://github.com/outerbounds/metaflow-card-altair/blob/main/altairflow.py
@@ -140,6 +140,7 @@ class BaselineChallenge(FlowSpec):
         import seaborn as sns
         import matplotlib.pyplot as plt
         from matplotlib import rcParams
+        import pandas as pd
 
         rcParams.update({"figure.autolayout": True})
 
@@ -160,11 +161,13 @@ class BaselineChallenge(FlowSpec):
 
         # TODO: Add a Table of the results to your card!
         current.card.append(
-            Table(
-                ...,  # TODO: What goes here to populate the Table in the card?
-                headers=["Model name", "Params", "Task pathspec", "Accuracy", "ROCAUC"],
+            Table.from_dataframe(
+                pd.DataFrame(violin_plot_df,  # TODO: What goes here to populate the Table in the card?
+                # columns=["Model name", "Params", "Task pathspec", "Accuracy", "ROCAUC"],
+                )
             )
         )
+
 
         fig, ax = plt.subplots(1, 1)
         plt.xticks(rotation=40)
@@ -172,7 +175,9 @@ class BaselineChallenge(FlowSpec):
 
         # TODO: Append the matplotlib fig to the card
         # Docs: https://docs.metaflow.org/metaflow/visualizing-results/easy-custom-reports-with-card-components#showing-plots
+        current.card.append(Image.from_matplotlib(fig))
 
+        
         self.next(self.end)
 
     @step
